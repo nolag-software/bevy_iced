@@ -44,7 +44,7 @@ use bevy_winit::WakeUp;
 use cfg_if::cfg_if;
 use iced_core::Theme;
 use iced_resource::IcedResource;
-use iced_runtime::user_interface::UserInterface;
+use iced_runtime::user_interface::{self, UserInterface};
 use iced_widget::graphics::Viewport;
 pub use redraw_requestor::RedrawRequestVariant;
 use redraw_requestor::{IcedRedrawRequest, RedrawRequestor};
@@ -245,7 +245,7 @@ mod iced_resource {
     pub struct IcedResource(Arc<Mutex<IcedProps>>);
 
     impl IcedResource {
-        pub fn lock(&self) -> MutexGuard<IcedProps> {
+        pub fn lock(&self) -> MutexGuard<'_, IcedProps> {
             self.0.lock().unwrap()
         }
     }
@@ -318,7 +318,7 @@ where
     props: Res<'w, IcedResource>,
     settings: Res<'w, IcedSettings>,
     did_draw: ResMut<'w, DidDraw>,
-    ui: NonSendMut<'w, Option<UserInterface<'static, Message, Theme, Renderer>>>,
+    ui: NonSendMut<'w, Option<user_interface::Cache>>,
     cursor: Res<'w, IcedCursor>,
     message_writer: EventWriter<'w, Message>,
     redraw_requestor: RedrawRequestor<'w, 's, WinitUserEvent>,
@@ -330,7 +330,7 @@ where
     U: RedrawRequestVariant,
 {
     /// Display an [`Element`] to the screen.
-    pub fn display(&mut self, element: impl Into<iced_core::Element<'static, M, Theme, Renderer>>) {
+    pub fn display<'a>(&mut self, element: impl Into<iced_core::Element<'a, M, Theme, Renderer>>) {
         let &mut IcedProps {
             ref mut renderer, ..
         } = &mut *self.props.lock();
@@ -338,11 +338,7 @@ where
 
         // Rebuild the UI using the new element.
         let element = element.into();
-        let cache = self
-            .ui
-            .take()
-            .map(UserInterface::into_cache)
-            .unwrap_or_default();
+        let cache = self.ui.take().unwrap_or_default();
         let mut ui = UserInterface::build(element, bounds, cache, renderer);
 
         // Run the UI update function with a single redraw request.
@@ -368,7 +364,7 @@ where
             &self.settings.style,
             **self.cursor,
         );
-        *self.ui = Some(ui);
+        *self.ui = Some(ui.into_cache());
         self.did_draw
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
