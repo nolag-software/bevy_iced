@@ -16,37 +16,40 @@ tokio = ["dep:tokio", "dep:async-compat"]
 smol = ["dep:async-io"]
 
 [dependencies]
-bevy_app = "0.16.0-rc.3"
-bevy_derive = "0.16.0-rc.3"
-bevy_ecs = "0.16.0-rc.3"
-bevy_input = "0.16.0-rc.3"
-bevy_math = "0.16.0-rc.3"
-bevy_render = "0.16.0-rc.3"
-bevy_core_pipeline = "0.16.0-rc.3"
-bevy_tasks = "0.16.0-rc.3"
-bevy_window = "0.16.0-rc.3"
-bevy_winit = "0.16.0-rc.3"
+bevy_app = "0.17"
+bevy_derive = "0.17"
+bevy_ecs = "0.17"
+bevy_input = "0.17"
+bevy_math = "0.17"
+bevy_render = "0.17"
+bevy_core_pipeline = "0.17"
+bevy_tasks = "0.17"
+bevy_window = "0.17"
+bevy_winit = "0.17"
+bevy_camera = "0.17"
+bevy_log = "0.17"
 
-iced_core = { git = "https://github.com/Argeo-Robotics/iced.git", rev = "943d6b1a93eb73ca69365e5009bb91b281785992" }
-iced_graphics = { git = "https://github.com/Argeo-Robotics/iced.git", rev = "943d6b1a93eb73ca69365e5009bb91b281785992" }
-iced_renderer = { git = "https://github.com/Argeo-Robotics/iced.git", features = ["wgpu"], rev = "943d6b1a93eb73ca69365e5009bb91b281785992" }
-iced_runtime = { git = "https://github.com/Argeo-Robotics/iced.git", rev = "943d6b1a93eb73ca69365e5009bb91b281785992" }
-iced_wgpu = { git = "https://github.com/Argeo-Robotics/iced.git", rev = "943d6b1a93eb73ca69365e5009bb91b281785992" }
-iced_widget = { git = "https://github.com/Argeo-Robotics/iced.git", rev = "943d6b1a93eb73ca69365e5009bb91b281785992" }
+iced_core = { git = "https://github.com/nolag-software/iced.git", branch = "bevy-0.17-support"}
+iced_graphics = { git = "https://github.com/nolag-software/iced.git", branch = "bevy-0.17-support"}
+iced_renderer = { git = "https://github.com/nolag-software/iced.git", branch = "bevy-0.17-support"}
+iced_runtime = { git = "https://github.com/nolag-software/iced.git", branch = "bevy-0.17-support"}
+iced_wgpu = { git = "https://github.com/nolag-software/iced.git", branch = "bevy-0.17-support"}
+iced_widget = { git = "https://github.com/nolag-software/iced.git", branch = "bevy-0.17-support"}
 
-cfg-if = "1.0.0"
+cfg-if = "1.0.4"
+bitflags = "2.9.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.44.1", default-features = false, features = ["time"], optional = true }
-async-compat = { version = "0.2.4", optional = true }
-async-io = { version = "2.4.0", optional = true }
+async-compat = { version = "0.2.5", optional = true }
+async-io = { version = "2.6.0", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 
 [dev-dependencies]
-bevy = { version = "0.16.0-rc.1", default-features = false, features = [
+bevy = { version = "0.17", default-features = false, features = [
     "async_executor",
     "bevy_core_pipeline",
     "bevy_sprite",
@@ -54,7 +57,11 @@ bevy = { version = "0.16.0-rc.1", default-features = false, features = [
     "bevy_winit",
     "multi_threaded",
     "webgpu",
-    "x11"
+    "x11",
+    "bevy_pbr",
+    "bevy_light",
+    "bevy_gizmos",
 ] }
-getrandom = { version = "0.3.1", features = ["wasm_js"] }
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
 rand = "0.9"
+bevy_panorbit_camera = "0.31.0"

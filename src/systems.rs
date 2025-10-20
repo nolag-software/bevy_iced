@@ -1,4 +1,4 @@
-use bevy_core_pipeline::core_2d::Camera2d;
+use bevy_camera::{Camera2d, ClearColorConfig};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
@@ -9,36 +9,41 @@ use bevy_input::{
     keyboard::KeyboardInput,
     mouse::{MouseButtonInput, MouseWheel},
 };
-use bevy_render::camera::Camera;
+use bevy_camera::Camera;
 use bevy_render::extract_component::ExtractComponent;
 use bevy_window::prelude::*;
 use bevy_window::{PrimaryWindow, WindowFocused};
 use iced_core::window::Event as IcedWindowEvent;
 use iced_core::{
-    Event as IcedEvent, Point, Theme, keyboard,
+    Event as IcedEvent, Point, keyboard,
     mouse::{self, Cursor},
 };
-use iced_runtime::UserInterface;
+use iced_runtime::user_interface;
 
 use crate::redraw_requestor::IcedRedrawRequest;
 use crate::{
-    IcedProps, IcedSettings, Renderer, conversions, iced_resource::IcedResource,
+    IcedSettings, conversions, iced_resource::IcedResource,
     render::IcedViewport, utils,
 };
 
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct IcedEventQueue(Vec<iced_core::Event>);
-
+impl IcedEventQueue {
+    /// Take the inner Vec of events, leaving an empty queue.
+    pub fn take(&mut self) -> Vec<iced_core::Event> {
+        std::mem::take(&mut self.0)
+    }
+}
 #[derive(SystemParam)]
 pub struct InputEvents<'w, 's> {
-    cursor_entered: EventReader<'w, 's, CursorEntered>,
-    cursor_left: EventReader<'w, 's, CursorLeft>,
-    cursor: EventReader<'w, 's, CursorMoved>,
-    mouse_button: EventReader<'w, 's, MouseButtonInput>,
-    mouse_wheel: EventReader<'w, 's, MouseWheel>,
-    keyboard_input: EventReader<'w, 's, KeyboardInput>,
-    touch_input: EventReader<'w, 's, TouchInput>,
-    window_focused: EventReader<'w, 's, WindowFocused>,
+    cursor_entered: MessageReader<'w, 's, CursorEntered>,
+    cursor_left: MessageReader<'w, 's, CursorLeft>,
+    cursor: MessageReader<'w, 's, CursorMoved>,
+    mouse_button: MessageReader<'w, 's, MouseButtonInput>,
+    mouse_wheel: MessageReader<'w, 's, MouseWheel>,
+    keyboard_input: MessageReader<'w, 's, KeyboardInput>,
+    touch_input: MessageReader<'w, 's, TouchInput>,
+    window_focused: MessageReader<'w, 's, WindowFocused>,
 }
 
 fn compute_modifiers(input_map: &ButtonInput<KeyCode>) -> keyboard::Modifiers {
@@ -152,46 +157,38 @@ pub fn process_input(
 #[derive(Resource, Deref, DerefMut, Default)]
 pub struct IcedCursor(Cursor);
 
-pub fn iced_update<M: bevy_ecs::event::Event>(
-    (viewport, windows): (Res<IcedViewport>, Query<&mut Window, With<PrimaryWindow>>),
-    #[cfg(target_arch = "wasm32")] props: NonSend<IcedResource>,
-    #[cfg(not(target_arch = "wasm32"))] props: Res<IcedResource>,
+pub fn iced_update<M: bevy_ecs::message::Message>(
+    (viewport, mut windows): (Res<IcedViewport>, Query<&mut Window, With<PrimaryWindow>>),
+    #[cfg(target_arch = "wasm32")] _props: NonSend<IcedResource>,
+    #[cfg(not(target_arch = "wasm32"))] _props: Res<IcedResource>,
     (mut events, touches): (ResMut<IcedEventQueue>, Res<Touches>),
-    mut ui: NonSendMut<Option<UserInterface<'static, M, Theme, Renderer>>>,
-    mut message_writer: EventWriter<M>,
+    ui_cache: NonSendMut<Option<user_interface::Cache>>,
+    mut _message_writer: bevy_ecs::message::MessageWriter<M>,
     mut cursor: ResMut<IcedCursor>,
-    mut iced_redraw_request: ResMut<IcedRedrawRequest>,
+    mut _iced_redraw_request: ResMut<IcedRedrawRequest>,
 ) {
+    // Update cursor position (based on window or touch).
     let bounds = viewport.logical_size();
-    let &mut IcedProps {
-        ref mut renderer, ..
-    } = &mut *props.lock();
     *cursor = IcedCursor({
-        let window = windows.single().unwrap();
+        let window = windows.single_mut().unwrap();
         match window.cursor_position() {
             Some(position) => {
-                Cursor::Available(utils::process_cursor_position(position, bounds, window))
+                Cursor::Available(utils::process_cursor_position(position, bounds, &window))
             }
             None => utils::process_touch_input(&touches, &events)
                 .map(Cursor::Available)
                 .unwrap_or(Cursor::Unavailable),
         }
     });
-    let Some(ui) = ui.as_mut() else { return };
 
-    let mut messages = Vec::<M>::new();
-    let (state, _event_statuses) = ui.update(
-        events.as_slice(),
-        **cursor,
-        renderer,
-        &mut iced_core::clipboard::Null,
-        &mut messages,
-    );
-    events.clear();
-    iced_redraw_request.update(state);
-    message_writer.write_batch(messages);
+    // If there's no cached UI, clear pending events so they don't accumulate.
+    // If we do have a cache, keep events around so display() (which has the
+    // root Element) can rebuild the UserInterface from the cache + Element and
+    // perform the full update/draw/message flow.
+    if ui_cache.is_none() {
+        events.clear();
+    }
 }
-
 /// Marker component to differentiate between normal 2D cameras and the iced camera.
 #[derive(Default, Component, ExtractComponent, Copy, Clone)]
 pub struct IcedCamera;
@@ -201,6 +198,7 @@ pub fn setup_iced_camera(mut commands: Commands, settings: Res<IcedSettings>) {
     commands.spawn((
         Camera {
             order: settings.camera_order,
+            clear_color: ClearColorConfig::None,
             ..Default::default()
         },
         Camera2d,

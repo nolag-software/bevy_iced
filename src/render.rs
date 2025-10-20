@@ -1,6 +1,7 @@
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::prelude::*;
 use bevy_ecs::query::QueryItem;
+use bevy_log::info;
 use bevy_render::render_graph::{RenderLabel, ViewNode};
 use bevy_render::view::ViewTarget;
 use bevy_render::{
@@ -10,7 +11,7 @@ use bevy_render::{
 };
 use bevy_window::prelude::*;
 use cfg_if::cfg_if;
-use iced_core::Size;
+use iced_core::{Size};
 use iced_wgpu::wgpu::TextureFormat;
 use iced_widget::graphics::Viewport;
 
@@ -33,7 +34,7 @@ pub fn update_viewport(
         .unwrap_or_else(|| window.scale_factor().into());
     let viewport = Viewport::with_physical_size(
         Size::new(window.physical_width(), window.physical_height()),
-        scale_factor,
+        scale_factor as f32,
     );
     commands.insert_resource(IcedViewport(viewport));
 }
@@ -47,10 +48,9 @@ pub fn extract_iced_data(
     viewport: Extract<Res<IcedViewport>>,
     did_draw: Extract<Res<DidDraw>>,
 ) {
+    let swapped = did_draw.swap(false, std::sync::atomic::Ordering::Relaxed);
+    commands.insert_resource(DidDrawBasic(swapped));
     commands.insert_resource(viewport.clone());
-    commands.insert_resource(DidDrawBasic(
-        did_draw.swap(false, std::sync::atomic::Ordering::Relaxed),
-    ));
 }
 
 pub fn recall_staging_belt(
@@ -65,37 +65,47 @@ pub struct IcedPass;
 
 impl ViewNode for IcedPass {
     type ViewQuery = (&'static ViewTarget, Has<IcedCamera>);
-    fn run<'w>(
+
+    fn run<'w, 's>(
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (target, is_iced): QueryItem<'w, Self::ViewQuery>,
+        (target, is_iced): QueryItem<'w, 's, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         if !is_iced {
             return Ok(());
         }
 
-        if !world.get_resource::<DidDrawBasic>().is_some_and(|x| x.0) {
+        let did_draw = world.get_resource::<DidDrawBasic>().is_some_and(|d| d.0);
+        if !did_draw {
             return Ok(());
         }
 
+        let Some(viewport) = world.get_resource::<IcedViewport>() else {
+            info!("IcedPass: missing IcedViewport");
+            return Ok(());
+        };
+
         let texture_view = target.main_texture_view();
-        let viewport = world.resource::<IcedViewport>();
 
         cfg_if! {
-            if #[cfg(target_arch = "wasm32")] {
-                let IcedProps {
-                    renderer,
-                    ..
-                } = &mut *world.non_send_resource::<IcedResource>().lock();
+            if #[cfg(target_arch="wasm32")] {
+                let Some(res) = world.get_non_send_resource::<IcedResource>() else {
+                    info!("IcedPass: missing IcedResource (wasm)");
+                    return Ok(());
+                };
+                let mut guard = res.lock();
+                let IcedProps { renderer, format, default_font, default_text_size } = &mut *guard;
             } else {
-                let IcedProps {
-                    renderer,
-                    ..
-                } = &mut *world.resource::<IcedResource>().lock();
+                let Some(res) = world.get_resource::<IcedResource>() else {
+                    info!("IcedPass: missing IcedResource");
+                    return Ok(());
+                };
+                let mut guard = res.lock();
+                let IcedProps { renderer} = &mut *guard;
             }
-        };
+        }
 
         let encoder = renderer.draw(None, texture_view, viewport);
         render_context.add_command_buffer(encoder.finish());

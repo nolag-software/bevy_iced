@@ -1,13 +1,11 @@
 use bevy::prelude::*;
 use bevy_iced::iced::widget::text;
 use bevy_iced::{IcedContext, IcedPlugin, IcedProgramSet, iced};
-use bevy_input::ButtonState;
-use bevy_input::keyboard::KeyboardInput;
 
 const NOTOSANS_REGULAR: iced::Font = iced::Font::with_name("Noto Sans");
 const NOTOSANS_REGULAR_BYTES: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
 
-#[derive(Event)]
+#[derive(bevy_ecs::message::Message)]
 pub enum UiMessage {}
 
 #[derive(Resource, PartialEq, Eq)]
@@ -24,7 +22,7 @@ pub fn main() {
                     ..Default::default()
                 }),
         )
-        .add_event::<UiMessage>()
+        .add_message::<UiMessage>()
         .insert_resource(UiActive(true))
         .add_systems(
             Update,
@@ -38,14 +36,12 @@ pub fn main() {
         .run();
 }
 
-fn toggle_system(mut keyboard: EventReader<KeyboardInput>, mut active: ResMut<UiActive>) {
-    for event in keyboard.read() {
-        if event.key_code == KeyCode::Space && event.state == ButtonState::Pressed {
-            active.0 = !active.0;
-        }
+fn toggle_system(keys: Res<ButtonInput<KeyCode>>, mut active: ResMut<UiActive>) {
+    if keys.just_pressed(KeyCode::Space) {
+        active.0 = !active.0;
+        println!("Toggled UI to {}", active.0);
     }
 }
-
 fn ui_system(mut ctx: IcedContext<UiMessage>) {
     ctx.display(text("Press space to toggle GUI."));
 }

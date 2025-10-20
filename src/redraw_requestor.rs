@@ -11,7 +11,7 @@ use iced_core::window::RedrawRequest;
 use iced_runtime::user_interface::State;
 
 /// A trait for types that can be used to request a redraw.
-pub trait RedrawRequestVariant: Event + Send + Sync + 'static {
+pub trait RedrawRequestVariant: Message + Send + Sync + 'static {
     /// The event that should be sent to request a redraw.
     const REDRAW_REQUEST: Self;
 }
@@ -32,10 +32,7 @@ impl Default for IcedRedrawRequest {
 impl From<State> for IcedRedrawRequest {
     fn from(state: State) -> Self {
         match state {
-            State::Updated {
-                redraw_request,
-                input_method: _,
-            } => Self(redraw_request),
+            State::Updated { redraw_request, .. } => Self(redraw_request),
             State::Outdated => Self(RedrawRequest::Wait),
         }
     }

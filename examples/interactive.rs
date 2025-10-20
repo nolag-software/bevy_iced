@@ -16,7 +16,7 @@ use rand::random as rng;
 const NOTOSANS_REGULAR: iced::Font = iced::Font::with_name("Noto Sans");
 const NOTOSANS_REGULAR_BYTES: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
 
-#[derive(Clone, Event)]
+#[derive(Clone, bevy_ecs::message::Message)]
 enum UiMessage {
     BoxRequested,
     Scale(f32),
@@ -51,7 +51,7 @@ pub fn main() {
             FrameTimeDiagnosticsPlugin::default(),
             LogDiagnosticsPlugin::default(),
         ))
-        .add_event::<UiMessage>()
+        .add_message::<UiMessage>()
         .insert_resource(UiActive(true))
         .insert_resource(UiData {
             scale: 50.0,
@@ -92,7 +92,7 @@ fn tick(mut sprites: Query<&mut Sprite>, time: Res<Time>, data: Res<UiData>) {
 
 fn box_system(
     mut commands: Commands,
-    mut messages: EventReader<UiMessage>,
+    mut messages: MessageReader<UiMessage>,
     mut data: ResMut<UiData>,
     mut sprites: Query<&mut Sprite>,
 ) {
@@ -123,7 +123,7 @@ fn box_system(
 }
 
 fn update_scale_factor(
-    mut wheel: EventReader<MouseWheel>,
+    mut wheel: MessageReader<MouseWheel>,
     mut iced_settings: ResMut<IcedSettings>,
 ) {
     if wheel.is_empty() {
@@ -136,7 +136,7 @@ fn update_scale_factor(
     }
 }
 
-fn toggle_ui(mut buttons: EventReader<MouseButtonInput>, mut ui_active: ResMut<UiActive>) {
+fn toggle_ui(mut buttons: MessageReader<MouseButtonInput>, mut ui_active: ResMut<UiActive>) {
     for ev in buttons.read() {
         if ev.button == MouseButton::Right {
             **ui_active = !**ui_active;

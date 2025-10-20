@@ -5,14 +5,14 @@
 //! use bevy_iced::iced::widget::text;
 //! use bevy_iced::{IcedContext, IcedPlugin};
 //!
-//! #[derive(Event)]
+//! #[derive(bevy_ecs::message::Message)]
 //! pub enum UiMessage {}
 //!
 //! pub fn main() {
 //!     App::new()
 //!         .add_plugins(DefaultPlugins)
 //!         .add_plugins(IcedPlugin::default())
-//!         .add_event::<UiMessage>()
+//!         .add_message::<UiMessage>()
 //!         .add_systems(Update, ui_system)
 //!         .run();
 //! }
@@ -29,7 +29,7 @@
 #![deny(missing_docs)]
 
 use crate::render::IcedPass;
-use crate::systems::{IcedCamera, setup_iced_camera};
+use crate::systems::{setup_iced_camera};
 use bevy_app::prelude::*;
 use bevy_core_pipeline::core_2d::graph::{Core2d, Node2d};
 use bevy_derive::{Deref, DerefMut};
@@ -37,12 +37,12 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use bevy_render::extract_component::ExtractComponentPlugin;
 use bevy_render::prelude::*;
-use bevy_render::render_graph::{RenderGraphApp, ViewNodeRunner};
-use bevy_render::renderer::{RenderAdapter, RenderDevice, RenderQueue, render_system};
-use bevy_render::{Render, RenderApp, RenderSet};
+use bevy_render::render_graph::{RenderGraphExt, ViewNodeRunner};
+use bevy_render::renderer::{render_system, RenderAdapter, RenderDevice, RenderQueue};
+use bevy_render::{Render, RenderApp, RenderSystems};
 use bevy_winit::WakeUp;
 use cfg_if::cfg_if;
-use iced_core::Theme;
+use iced_core::{Theme};
 use iced_resource::IcedResource;
 use iced_runtime::user_interface::{self, UserInterface};
 use iced_widget::graphics::Viewport;
@@ -58,11 +58,11 @@ use systems::{IcedCursor, IcedEventQueue};
 /// This module attempts to emulate the `iced` package's API
 /// as much as possible.
 pub mod iced;
-
 mod conversions;
 mod redraw_requestor;
 mod render;
 mod systems;
+pub use systems::IcedCamera;
 mod utils;
 
 /// The default renderer.
@@ -104,7 +104,7 @@ impl<Message, WinitUserEvent> IcedPlugin<Message, WinitUserEvent> {
     }
 }
 
-impl<M: Event, U: RedrawRequestVariant> Plugin for IcedPlugin<M, U> {
+impl<M: bevy_ecs::message::Message, U: RedrawRequestVariant> Plugin for IcedPlugin<M, U> {
     fn build(&self, app: &mut App) {
         app.add_plugins(ExtractComponentPlugin::<IcedCamera>::default())
             .add_systems(
@@ -117,10 +117,10 @@ impl<M: Event, U: RedrawRequestVariant> Plugin for IcedPlugin<M, U> {
             )
             .init_resource::<DidDraw>()
             .init_resource::<IcedSettings>()
-            .insert_non_send_resource::<Option<UserInterface<M, Theme, Renderer>>>(None)
             .init_resource::<IcedEventQueue>()
             .init_resource::<IcedCursor>()
             .init_resource::<IcedRedrawRequest>()
+            .insert_non_send_resource::<Option<user_interface::Cache>>(None)// insert cached ui instead of the ui itself
             .add_systems(Startup, setup_iced_camera)
             .configure_sets(Update, IcedProgramSet::View.after(IcedProgramSet::Update));
 
@@ -148,11 +148,11 @@ impl<M: Event, U: RedrawRequestVariant> Plugin for IcedPlugin<M, U> {
             .insert_resource(default_viewport)
             .add_systems(ExtractSchedule, render::extract_iced_data)
             .add_systems(
-                Render,
-                render::recall_staging_belt
-                    .after(render_system)
-                    .in_set(RenderSet::Render),
-            );
+            Render,
+            render::recall_staging_belt
+                .after(render_system)
+                .in_set(RenderSystems::Render),
+        );
         cfg_if! {
             if #[cfg(target_arch = "wasm32")] {
                 render_app.world_mut().insert_non_send_resource(iced_resource);
@@ -306,9 +306,9 @@ pub(crate) struct DidDraw(std::sync::atomic::AtomicBool);
 /// `IcedContext<T>` requires an event system to be defined in the [`App`].
 /// Do so by invoking `app.add_event::<T>()` when constructing your App.
 #[derive(SystemParam)]
-pub struct IcedContext<'w, 's, Message, WinitUserEvent = WakeUp>
+pub struct IcedContext<'w, 's, M, WinitUserEvent = WakeUp>
 where
-    Message: bevy_ecs::event::Event,
+    M: bevy_ecs::message::Message,
     WinitUserEvent: RedrawRequestVariant,
 {
     viewport: Res<'w, IcedViewport>,
@@ -320,50 +320,46 @@ where
     did_draw: ResMut<'w, DidDraw>,
     ui: NonSendMut<'w, Option<user_interface::Cache>>,
     cursor: Res<'w, IcedCursor>,
-    message_writer: EventWriter<'w, Message>,
+    message_writer: bevy_ecs::message::MessageWriter<'w, M>,
     redraw_requestor: RedrawRequestor<'w, 's, WinitUserEvent>,
+    // add the queued input events so display() can feed them into the UI
+    events: ResMut<'w, crate::systems::IcedEventQueue>,
 }
-
-impl<M, U> IcedContext<'_, '_, M, U>
-where
-    M: bevy_ecs::event::Event,
-    U: RedrawRequestVariant,
-{
+impl<M: bevy_ecs::message::Message, U: RedrawRequestVariant> IcedContext<'_, '_, M, U> {
     /// Display an [`Element`] to the screen.
-    pub fn display<'a>(&mut self, element: impl Into<iced_core::Element<'a, M, Theme, Renderer>>) {
-        let &mut IcedProps {
-            ref mut renderer, ..
-        } = &mut *self.props.lock();
+     pub fn display<'a>(&mut self, element: impl Into<iced_core::Element<'a, M, Theme, Renderer>>) {
+        let &mut IcedProps { ref mut renderer, .. } = &mut *self.props.lock();
         let bounds = self.viewport.logical_size();
 
-        // Rebuild the UI using the new element.
         let element = element.into();
         let cache = self.ui.take().unwrap_or_default();
         let mut ui = UserInterface::build(element, bounds, cache, renderer);
 
-        // Run the UI update function with a single redraw request.
-        // This is necessary to account for widget state that depends on external state (like time).
+        // take queued events and append a RedrawRequested so time-dependent widgets update
         let mut messages = Vec::<M>::new();
-        let events = [iced_core::Event::Window(
+
+        let mut events_vec = self.events.take();
+        events_vec.push(iced_core::Event::Window(
             iced_core::window::Event::RedrawRequested(iced_core::time::Instant::now()),
-        )];
+        ));
+
         let (state, _event_statuses) = ui.update(
-            events.as_slice(),
+            events_vec.as_slice(),
             **self.cursor,
             renderer,
             &mut iced_core::clipboard::Null,
             &mut messages,
         );
+
+        // we consumed the queued events; leave the queue empty
+        self.events.clear();
+
         self.redraw_requestor.finish(state);
         self.message_writer.write_batch(messages);
 
-        // Draw the UI.
-        ui.draw(
-            renderer,
-            &self.settings.theme,
-            &self.settings.style,
-            **self.cursor,
-        );
+        // Draw the UI into iced's internal render targets.
+        ui.draw(renderer, &self.settings.theme, &self.settings.style, **self.cursor);
+
         *self.ui = Some(ui.into_cache());
         self.did_draw
             .store(true, std::sync::atomic::Ordering::Relaxed);

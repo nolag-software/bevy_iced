@@ -36,6 +36,9 @@ See the [examples](https://github.com/tasgon/bevy_iced/tree/master/examples) and
 
 |Bevy Version  |Crate Version  |
 |--------------|---------------|
+|`0.17`        |`0.5`, `bevy-0.17-support`|
+|`0.16`        |`0.5`, `bevy-0.16-support`|
+|`0.15`        |`0.5`, `bevy-0.15-support`|
 |`0.13`        |`0.5`, `master`|
 |`0.11`        |`0.4`          |
 |`0.10`        |`0.3`          |
