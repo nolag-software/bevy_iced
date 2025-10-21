@@ -24,6 +24,7 @@ use crate::redraw_requestor::IcedRedrawRequest;
 use crate::{
     IcedSettings, conversions, iced_resource::IcedResource,
     render::IcedViewport, utils,
+    BevyIcedTheme
 };
 
 #[derive(Resource, Deref, DerefMut, Default)]
@@ -194,7 +195,10 @@ pub fn iced_update<M: bevy_ecs::message::Message>(
 pub struct IcedCamera;
 
 /// Spawns a 2D camera, which serves as the render target for iced.
-pub fn setup_iced_camera(mut commands: Commands, settings: Res<IcedSettings>) {
+pub fn setup_iced_camera<T: BevyIcedTheme>(
+    mut commands: Commands,
+    settings: Res<IcedSettings<T>>,
+) {
     commands.spawn((
         Camera {
             order: settings.camera_order,

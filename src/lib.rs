@@ -10,8 +10,8 @@
 //!
 //! pub fn main() {
 //!     App::new()
-//!         .add_plugins(DefaultPlugins)
-//!         .add_plugins(IcedPlugin::default())
+//!         .add_plugins((DefaultPlugins,))
+//!         .add_plugins((IcedPlugin::default(),))
 //!         .add_message::<UiMessage>()
 //!         .add_systems(Update, ui_system)
 //!         .run();
@@ -29,7 +29,7 @@
 #![deny(missing_docs)]
 
 use crate::render::IcedPass;
-use crate::systems::{setup_iced_camera};
+use crate::systems::setup_iced_camera;
 use bevy_app::prelude::*;
 use bevy_core_pipeline::core_2d::graph::{Core2d, Node2d};
 use bevy_derive::{Deref, DerefMut};
@@ -42,7 +42,7 @@ use bevy_render::renderer::{render_system, RenderAdapter, RenderDevice, RenderQu
 use bevy_render::{Render, RenderApp, RenderSystems};
 use bevy_winit::WakeUp;
 use cfg_if::cfg_if;
-use iced_core::{Theme};
+use iced_core::Theme as IcedCoreTheme;
 use iced_resource::IcedResource;
 use iced_runtime::user_interface::{self, UserInterface};
 use iced_widget::graphics::Viewport;
@@ -52,6 +52,8 @@ use render::IcedViewport;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use systems::{IcedCursor, IcedEventQueue};
+
+// Bring Iced's theme traits in under a short alias.
 
 /// Basic re-exports for all Iced-related stuff.
 ///
@@ -68,19 +70,26 @@ mod utils;
 /// The default renderer.
 pub type Renderer = iced_wgpu::Renderer;
 
-/// The main feature of `bevy_iced`.
-/// Add this to your [`App`] by calling `app.add_plugin(bevy_iced::IcedPlugin::<Message>::default())`.
+/// A trait alias for valid theme types usable with bevy_iced.
 ///
-/// `Message` is the type of of message that is produced by the UI.
-/// `WinitUserEvent` is the UserEvent type for the Winit event loop.
-/// If you are not overriding this type in the `WinitPlugin`, you don't need to set this manually.
-pub struct IcedPlugin<Message, WinitUserEvent = WakeUp> {
+/// Anything that is an Iced `Base` theme and is thread-safe + cloneable qualifies.
+pub trait BevyIcedTheme: iced_core::theme::Base + Clone + Send + Sync + 'static {}
+impl<T> BevyIcedTheme for T where T: iced_core::theme::Base + Clone + Send + Sync + 'static {}
+
+/// The main feature of `bevy_iced`.
+/// Add this to your [`App`] by calling `app.add_plugins((bevy_iced::IcedPlugin::<Message>::default(),))`.
+///
+/// `Message` is the type of message produced by the UI.
+/// `T` is the Iced theme type (defaults to `iced_core::Theme`).
+/// `WinitUserEvent` is the UserEvent type for the winit event loop.
+/// If you are not overriding this type in the `WinitPlugin`, you don't need to set it.
+pub struct IcedPlugin<Message, T = IcedCoreTheme, WinitUserEvent = WakeUp> {
     settings: iced::Settings,
     fonts: Vec<&'static [u8]>,
-    _marker: PhantomData<(Message, WinitUserEvent)>,
+    _marker: PhantomData<(Message, T, WinitUserEvent)>,
 }
 
-impl<Message, WinitUserEvent> Default for IcedPlugin<Message, WinitUserEvent> {
+impl<Message, T, WinitUserEvent> Default for IcedPlugin<Message, T, WinitUserEvent> {
     fn default() -> Self {
         Self {
             settings: Default::default(),
@@ -90,7 +99,7 @@ impl<Message, WinitUserEvent> Default for IcedPlugin<Message, WinitUserEvent> {
     }
 }
 
-impl<Message, WinitUserEvent> IcedPlugin<Message, WinitUserEvent> {
+impl<Message, T, WinitUserEvent> IcedPlugin<Message, T, WinitUserEvent> {
     /// Set the Iced settings.
     pub fn settings(mut self, settings: iced::Settings) -> Self {
         self.settings = settings;
@@ -104,24 +113,30 @@ impl<Message, WinitUserEvent> IcedPlugin<Message, WinitUserEvent> {
     }
 }
 
-impl<M: bevy_ecs::message::Message, U: RedrawRequestVariant> Plugin for IcedPlugin<M, U> {
+impl<M, T, U> Plugin for IcedPlugin<M, T, U>
+where
+    M: bevy_ecs::message::Message + 'static,
+    T: BevyIcedTheme,             // <- no std::Default bound
+    U: RedrawRequestVariant + 'static,
+{
     fn build(&self, app: &mut App) {
         app.add_plugins(ExtractComponentPlugin::<IcedCamera>::default())
             .add_systems(
                 PreUpdate,
                 (
-                    (systems::process_input, render::update_viewport)
+                    (systems::process_input, render::update_viewport::<T>)
                         .before(systems::iced_update::<M>),
                     systems::iced_update::<M>,
                 ),
             )
             .init_resource::<DidDraw>()
-            .init_resource::<IcedSettings>()
+            .init_resource::<IcedSettings<T>>()
             .init_resource::<IcedEventQueue>()
             .init_resource::<IcedCursor>()
             .init_resource::<IcedRedrawRequest>()
-            .insert_non_send_resource::<Option<user_interface::Cache>>(None)// insert cached ui instead of the ui itself
-            .add_systems(Startup, setup_iced_camera)
+            // insert cached ui instead of the ui itself
+            .insert_non_send_resource::<Option<user_interface::Cache>>(None)
+            .add_systems(Startup, setup_iced_camera::<T>) // make camera use same T
             .configure_sets(Update, IcedProgramSet::View.after(IcedProgramSet::Update));
 
         app.sub_app_mut(RenderApp)
@@ -148,11 +163,11 @@ impl<M: bevy_ecs::message::Message, U: RedrawRequestVariant> Plugin for IcedPlug
             .insert_resource(default_viewport)
             .add_systems(ExtractSchedule, render::extract_iced_data)
             .add_systems(
-            Render,
-            render::recall_staging_belt
-                .after(render_system)
-                .in_set(RenderSystems::Render),
-        );
+                Render,
+                render::recall_staging_belt
+                    .after(render_system)
+                    .in_set(RenderSystems::Render),
+            );
         cfg_if! {
             if #[cfg(target_arch = "wasm32")] {
                 render_app.world_mut().insert_non_send_resource(iced_resource);
@@ -177,7 +192,7 @@ struct IcedProps {
 }
 
 impl IcedProps {
-    fn new<M, U>(app: &App, config: &IcedPlugin<M, U>) -> Self {
+    fn new<M, T, U>(app: &App, config: &IcedPlugin<M, T, U>) -> Self {
         let render_world = &app.sub_app(RenderApp).world();
         let device = render_world
             .get_resource::<RenderDevice>()
@@ -259,35 +274,39 @@ mod iced_resource {
 
 /// Settings used to independently customize Iced rendering.
 #[derive(Clone, Resource)]
-pub struct IcedSettings {
+pub struct IcedSettings<T = IcedCoreTheme> {
     /// The scale factor to use for rendering Iced elements.
     /// Setting this to `None` defaults to using the `Window`s scale factor.
     pub scale_factor: Option<f64>,
     /// The theme to use for rendering Iced elements.
-    pub theme: Theme,
+    pub theme: T,
     /// The style to use for rendering Iced elements.
     pub style: iced::Style,
     /// The order of the bevy iced camera. A higher value is drawn later, than a lower value.
     pub camera_order: isize,
 }
 
-impl IcedSettings {
-    /// Set the `scale_factor` used to render Iced elements.
-    pub fn set_scale_factor(&mut self, factor: impl Into<Option<f64>>) {
-        self.scale_factor = factor.into();
-    }
-}
-
-impl Default for IcedSettings {
+// Provide a default via Iced's theme Base (not std::Default on T).
+impl<T> Default for IcedSettings<T>
+where
+    T: BevyIcedTheme
+{
     fn default() -> Self {
         Self {
             scale_factor: None,
-            theme: Theme::Dark,
+            theme: T::default(iced_core::theme::Mode::Dark),
             style: iced::Style {
                 text_color: iced_core::Color::WHITE,
             },
             camera_order: 10,
         }
+    }
+}
+
+impl<T> IcedSettings<T> {
+    /// Set the `scale_factor` used to render Iced elements.
+    pub fn set_scale_factor(&mut self, factor: impl Into<Option<f64>>) {
+        self.scale_factor = factor.into();
     }
 }
 
@@ -303,12 +322,13 @@ pub(crate) struct DidDraw(std::sync::atomic::AtomicBool);
 /// }
 /// ```
 ///
-/// `IcedContext<T>` requires an event system to be defined in the [`App`].
-/// Do so by invoking `app.add_event::<T>()` when constructing your App.
+/// `IcedContext<Message>` requires an event system to be defined in the [`App`].
+/// Do so by invoking `app.add_event::<Message>()` when constructing your App.
 #[derive(SystemParam)]
-pub struct IcedContext<'w, 's, M, WinitUserEvent = WakeUp>
+pub struct IcedContext<'w, 's, M, T = IcedCoreTheme, WinitUserEvent = WakeUp>
 where
     M: bevy_ecs::message::Message,
+    T: BevyIcedTheme,
     WinitUserEvent: RedrawRequestVariant,
 {
     viewport: Res<'w, IcedViewport>,
@@ -316,7 +336,7 @@ where
     props: NonSend<'w, IcedResource>,
     #[cfg(not(target_arch = "wasm32"))]
     props: Res<'w, IcedResource>,
-    settings: Res<'w, IcedSettings>,
+    settings: Res<'w, IcedSettings<T>>,
     did_draw: ResMut<'w, DidDraw>,
     ui: NonSendMut<'w, Option<user_interface::Cache>>,
     cursor: Res<'w, IcedCursor>,
@@ -325,9 +345,15 @@ where
     // add the queued input events so display() can feed them into the UI
     events: ResMut<'w, crate::systems::IcedEventQueue>,
 }
-impl<M: bevy_ecs::message::Message, U: RedrawRequestVariant> IcedContext<'_, '_, M, U> {
+
+impl<M, T, U> IcedContext<'_, '_, M, T, U>
+where
+    M: bevy_ecs::message::Message,
+    U: RedrawRequestVariant,
+    T: BevyIcedTheme,
+{
     /// Display an [`Element`] to the screen.
-     pub fn display<'a>(&mut self, element: impl Into<iced_core::Element<'a, M, Theme, Renderer>>) {
+    pub fn display<'a>(&mut self, element: impl Into<iced_core::Element<'a, M, T, Renderer>>) {
         let &mut IcedProps { ref mut renderer, .. } = &mut *self.props.lock();
         let bounds = self.viewport.logical_size();
 

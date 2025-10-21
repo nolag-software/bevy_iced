@@ -49,19 +49,7 @@ gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 
 [dev-dependencies]
-bevy = { version = "0.17", default-features = false, features = [
-    "async_executor",
-    "bevy_core_pipeline",
-    "bevy_sprite",
-    "bevy_window",
-    "bevy_winit",
-    "multi_threaded",
-    "webgpu",
-    "x11",
-    "bevy_pbr",
-    "bevy_light",
-    "bevy_gizmos",
-] }
+bevy = { version = "0.17", default-features = true} 
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
-rand = "0.9"
+rand = "0.9.2"
 bevy_panorbit_camera = "0.31.0"

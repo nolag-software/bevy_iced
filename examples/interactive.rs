@@ -80,7 +80,14 @@ pub fn main() {
 }
 
 fn build_program(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 0,
+            clear_color: ClearColorConfig::default(),
+            ..Default::default()
+        },
+    ));
 }
 
 fn tick(mut sprites: Query<&mut Sprite>, time: Res<Time>, data: Res<UiData>) {

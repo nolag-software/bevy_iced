@@ -16,16 +16,16 @@ use iced_wgpu::wgpu::TextureFormat;
 use iced_widget::graphics::Viewport;
 
 use crate::systems::IcedCamera;
-use crate::{DidDraw, IcedProps, IcedResource, IcedSettings};
+use crate::{DidDraw, IcedProps, IcedResource, IcedSettings, BevyIcedTheme};
 
 pub const TEXTURE_FMT: TextureFormat = TextureFormat::Rgba8UnormSrgb; // must be equal to the format of the iced 2D camera
 
 #[derive(Resource, Deref, DerefMut, Clone)]
 pub struct IcedViewport(pub Viewport);
 
-pub fn update_viewport(
+pub fn update_viewport<T: BevyIcedTheme>(
     windows: Query<&Window>,
-    iced_settings: Res<IcedSettings>,
+    iced_settings: Res<IcedSettings<T>>,
     mut commands: Commands,
 ) {
     let window = windows.single().unwrap();

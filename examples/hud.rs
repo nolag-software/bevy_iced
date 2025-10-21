@@ -4,8 +4,11 @@ use bevy::window::WindowResolution;
 use bevy_iced::{iced, IcedContext, IcedPlugin, IcedProgramSet};
 
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
-use iced::widget::{button, column, container, row, text, tooltip};
+use iced::widget::{
+    button, column, container, row, text, tooltip, Space,
+};
 use iced::{Alignment, Length};
+
 // ---------- UI model ----------
 #[derive(Clone, Debug, bevy_ecs::message::Message)]
 enum UiMessage {
@@ -45,11 +48,6 @@ struct UiState {
 }
 
 fn ui_system(mut ctx: IcedContext<UiMessage>, state: Res<UiState>) {
-    use iced::widget::{
-        button, column, container, row, text, tooltip, Space,
-    };
-    use iced::{Alignment, Length};
-
     // tiny knobs
     let rail_w = 72.0;
     let chip_d = 32.0;
@@ -213,7 +211,6 @@ fn setup_scene(
     ));
 }
 
-// ---------- App ----------
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -239,3 +236,4 @@ fn main() {
         )
         .run();
 }
+
