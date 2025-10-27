@@ -822,6 +822,7 @@ dependencies = [
  "bevy_winit",
  "bitflags 2.9.4",
  "cfg-if",
+ "crossbeam-channel",
  "getrandom",
  "gloo-timers",
  "iced_core",

@@ -38,7 +38,7 @@ use bevy_ecs::system::SystemParam;
 use bevy_render::extract_component::ExtractComponentPlugin;
 use bevy_render::prelude::*;
 use bevy_render::render_graph::{RenderGraphExt, ViewNodeRunner};
-use bevy_render::renderer::{render_system, RenderAdapter, RenderDevice, RenderQueue};
+use bevy_render::renderer::{RenderAdapter, RenderDevice, RenderQueue, render_system};
 use bevy_render::{Render, RenderApp, RenderSystems};
 use bevy_winit::WakeUp;
 use cfg_if::cfg_if;
@@ -55,16 +55,20 @@ use systems::{IcedCursor, IcedEventQueue};
 
 // Bring Iced's theme traits in under a short alias.
 
+mod conversions;
 /// Basic re-exports for all Iced-related stuff.
 ///
 /// This module attempts to emulate the `iced` package's API
 /// as much as possible.
 pub mod iced;
-mod conversions;
 mod redraw_requestor;
 mod render;
 mod systems;
 pub use systems::IcedCamera;
+#[cfg(feature = "iced_tasks")]
+pub mod tasks;
+#[cfg(feature = "iced_tasks")]
+pub use tasks::IcedTaskPlugin;
 mod utils;
 
 /// The default renderer.
@@ -116,7 +120,7 @@ impl<Message, T, WinitUserEvent> IcedPlugin<Message, T, WinitUserEvent> {
 impl<M, T, U> Plugin for IcedPlugin<M, T, U>
 where
     M: bevy_ecs::message::Message + 'static,
-    T: BevyIcedTheme,             // <- no std::Default bound
+    T: BevyIcedTheme,
     U: RedrawRequestVariant + 'static,
 {
     fn build(&self, app: &mut App) {
@@ -289,7 +293,7 @@ pub struct IcedSettings<T = IcedCoreTheme> {
 // Provide a default via Iced's theme Base (not std::Default on T).
 impl<T> Default for IcedSettings<T>
 where
-    T: BevyIcedTheme
+    T: BevyIcedTheme,
 {
     fn default() -> Self {
         Self {
@@ -354,7 +358,9 @@ where
 {
     /// Display an [`Element`] to the screen.
     pub fn display<'a>(&mut self, element: impl Into<iced_core::Element<'a, M, T, Renderer>>) {
-        let &mut IcedProps { ref mut renderer, .. } = &mut *self.props.lock();
+        let &mut IcedProps {
+            ref mut renderer, ..
+        } = &mut *self.props.lock();
         let bounds = self.viewport.logical_size();
 
         let element = element.into();
@@ -384,7 +390,12 @@ where
         self.message_writer.write_batch(messages);
 
         // Draw the UI into iced's internal render targets.
-        ui.draw(renderer, &self.settings.theme, &self.settings.style, **self.cursor);
+        ui.draw(
+            renderer,
+            &self.settings.theme,
+            &self.settings.style,
+            **self.cursor,
+        );
 
         *self.ui = Some(ui.into_cache());
         self.did_draw
